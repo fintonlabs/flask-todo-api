@@ -1,33 +1,22 @@
 import unittest
-import main
+from main import app, db, User, Todo
 
-class TestMain(unittest.TestCase):
+class MainTestCase(unittest.TestCase):
     def setUp(self):
-        main.app.testing = True
-        self.app = main.app.test_client()
+        self.app = app.test_client()
+        self.db = db
 
-    def test_get_tasks(self):
-        rv = self.app.get('/tasks')
-        self.assertEqual(rv.status_code, 200)
+    def test_register(self):
+        response = self.app.post('/register', json={'email': 'test@test.com', 'password': 'test'})
+        self.assertEqual(response.status_code, 201)
 
-    def test_create_task(self):
-        rv = self.app.post('/tasks', json={'title': 'test task'})
-        self.assertEqual(rv.status_code, 201)
-        self.assertIn('new task created', rv.get_json()['message'])
+    def test_login(self):
+        response = self.app.post('/login', json={'email': 'test@test.com', 'password': 'test'})
+        self.assertEqual(response.status_code, 200)
 
-    def test_get_task(self):
-        rv = self.app.get('/tasks/1')
-        self.assertEqual(rv.status_code, 200)
-
-    def test_update_task(self):
-        rv = self.app.put('/tasks/1', json={'title': 'updated task'})
-        self.assertEqual(rv.status_code, 200)
-        self.assertIn('task updated', rv.get_json()['message'])
-
-    def test_delete_task(self):
-        rv = self.app.delete('/tasks/1')
-        self.assertEqual(rv.status_code, 200)
-        self.assertIn('task deleted', rv.get_json()['message'])
+    def test_create_todo(self):
+        response = self.app.post('/todos', json={'title': 'Test', 'description': 'Test description'}, headers={'Authorization': 'Bearer <token>'})
+        self.assertEqual(response.status_code, 201)
 
 if __name__ == '__main__':
     unittest.main()

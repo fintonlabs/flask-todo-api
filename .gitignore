@@ -6,15 +6,18 @@ __pycache__
 *.so
 *.ipynb
 *.egg
-*.egg-info/
-dist/
-build/
+*.egg-info
+dist
+build
 *.sublime-project
 *.sublime-workspace
-*.idea/
-*.vscode/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# SQLite
+*.sqlite

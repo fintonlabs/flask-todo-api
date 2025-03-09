@@ -1,149 +1,108 @@
 from flask import Flask, request, jsonify
-import sqlite3
-from sqlite3 import Error
-from typing import Tuple
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_jwt_extended import JWTManager, jwt_required, create_access_token, get_jwt_identity
+import os
 
 app = Flask(__name__)
-
-DATABASE = 'todo.db'
-
-
-def create_connection(db_file: str) -> sqlite3.Connection:
-    """
-    Create a database connection to the SQLite database specified by db_file
-    :param db_file: database file
-    :return: Connection object or None
-    """
-    conn = None
-    try:
-        conn = sqlite3.connect(db_file)
-    except Error as e:
-        print(e)
-
-    return conn
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////tmp/test.db'
+app.config['JWT_SECRET_KEY'] = 'super-secret'  # Change this!
+db = SQLAlchemy(app)
+jwt = JWTManager(app)
 
 
-def create_table(conn: sqlite3.Connection) -> None:
-    """
-    Create tasks table
-    :param conn: Connection object
-    :return: None
-    """
-    try:
-        sql_create_tasks_table = """ CREATE TABLE IF NOT EXISTS tasks (
-                                        id integer PRIMARY KEY,
-                                        title text NOT NULL,
-                                        description text,
-                                        completed boolean NOT NULL DEFAULT 0,
-                                        due_date date
-                                    ); """
-        conn.execute(sql_create_tasks_table)
-    except Error as e:
-        print(e)
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(100), unique=True, nullable=False)
+    password = db.Column(db.String(100), nullable=False)
 
 
-@app.route('/tasks', methods=['GET'])
-def get_tasks() -> Tuple[str, int]:
-    """
-    Get all tasks
-    :return: JSON response
-    """
-    conn = create_connection(DATABASE)
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM tasks")
-
-    rows = cur.fetchall()
-
-    return jsonify(rows), 200
+class Todo(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    completed = db.Column(db.Boolean, default=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
 
 
-@app.route('/tasks', methods=['POST'])
-def create_task() -> Tuple[str, int]:
-    """
-    Create a new task
-    :return: JSON response
-    """
-    if not request.json or 'title' not in request.json:
-        return jsonify({'error': 'the new task needs a title'}), 400
-
-    task = (request.json.get('title', ""), request.json.get('description', ""), request.json.get('completed', 0),
-            request.json.get('due_date', None))
-
-    sql = ''' INSERT INTO tasks(title,description,completed,due_date)
-              VALUES(?,?,?,?) '''
-    conn = create_connection(DATABASE)
-    cur = conn.cursor()
-    cur.execute(sql, task)
-    conn.commit()
-
-    return jsonify({'message': 'new task created'}), 201
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    hashed_password = generate_password_hash(data['password'], method='sha256')
+    new_user = User(email=data['email'], password=hashed_password)
+    db.session.add(new_user)
+    db.session.commit()
+    return jsonify({'message': 'Registered successfully'}), 201
 
 
-@app.route('/tasks/<int:task_id>', methods=['GET'])
-def get_task(task_id: int) -> Tuple[str, int]:
-    """
-    Get a specific task
-    :param task_id: ID of the task
-    :return: JSON response
-    """
-    conn = create_connection(DATABASE)
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM tasks WHERE id=?", (task_id,))
-
-    row = cur.fetchone()
-
-    if row is None:
-        return jsonify({'error': 'task not found'}), 404
-
-    return jsonify(row), 200
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    user = User.query.filter_by(email=data['email']).first()
+    if not user or not check_password_hash(user.password, data['password']):
+        return jsonify({'message': 'Bad credentials'}), 401
+    token = create_access_token(identity=user.id)
+    return jsonify({'access_token': token}), 200
 
 
-@app.route('/tasks/<int:task_id>', methods=['PUT'])
-def update_task(task_id: int) -> Tuple[str, int]:
-    """
-    Update a specific task
-    :param task_id: ID of the task
-    :return: JSON response
-    """
-    if not request.json:
-        return jsonify({'error': 'the updated task needs a title'}), 400
-
-    task = (request.json.get('title', ""), request.json.get('description', ""), request.json.get('completed', 0),
-            request.json.get('due_date', None), task_id)
-
-    sql = ''' UPDATE tasks
-              SET title = ? ,
-                  description = ? ,
-                  completed = ? ,
-                  due_date = ?
-              WHERE id = ?'''
-    conn = create_connection(DATABASE)
-    cur = conn.cursor()
-    cur.execute(sql, task)
-    conn.commit()
-
-    return jsonify({'message': 'task updated'}), 200
+@app.route('/todos', methods=['POST'])
+@jwt_required
+def create_todo():
+    user_id = get_jwt_identity()
+    data = request.get_json()
+    new_todo = Todo(title=data['title'], description=data['description'], user_id=user_id)
+    db.session.add(new_todo)
+    db.session.commit()
+    return jsonify({'message': 'Todo created'}), 201
 
 
-@app.route('/tasks/<int:task_id>', methods=['DELETE'])
-def delete_task(task_id: int) -> Tuple[str, int]:
-    """
-    Delete a specific task
-    :param task_id: ID of the task
-    :return: JSON response
-    """
-    conn = create_connection(DATABASE)
-    cur = conn.cursor()
-    cur.execute("DELETE FROM tasks WHERE id=?", (task_id,))
-    conn.commit()
+@app.route('/todos', methods=['GET'])
+@jwt_required
+def get_todos():
+    user_id = get_jwt_identity()
+    todos = Todo.query.filter_by(user_id=user_id).all()
+    return jsonify([{'id': todo.id, 'title': todo.title, 'description': todo.description, 'completed': todo.completed} for todo in todos])
 
-    return jsonify({'message': 'task deleted'}), 200
+
+@app.route('/todos/<int:id>', methods=['PUT'])
+@jwt_required
+def update_todo(id):
+    user_id = get_jwt_identity()
+    todo = Todo.query.filter_by(id=id, user_id=user_id).first()
+    if not todo:
+        return jsonify({'message': 'Todo not found'}), 404
+    data = request.get_json()
+    todo.title = data.get('title', todo.title)
+    todo.description = data.get('description', todo.description)
+    db.session.commit()
+    return jsonify({'message': 'Todo updated'})
+
+
+@app.route('/todos/<int:id>', methods=['DELETE'])
+@jwt_required
+def delete_todo(id):
+    user_id = get_jwt_identity()
+    todo = Todo.query.filter_by(id=id, user_id=user_id).first()
+    if not todo:
+        return jsonify({'message': 'Todo not found'}), 404
+    db.session.delete(todo)
+    db.session.commit()
+    return jsonify({'message': 'Todo deleted'})
+
+
+@app.route('/todos/<int:id>/complete', methods=['PATCH'])
+@jwt_required
+def complete_todo(id):
+    user_id = get_jwt_identity()
+    todo = Todo.query.filter_by(id=id, user_id=user_id).first()
+    if not todo:
+        return jsonify({'message': 'Todo not found'}), 404
+    todo.completed = True
+    db.session.commit()
+    return jsonify({'message': 'Todo marked as complete'})
 
 
 if __name__ == '__main__':
-    conn = create_connection(DATABASE)
-    if conn is not None:
-        create_table(conn)
-    else:
-        print("Error! cannot create the database connection.")
+    if not os.path.exists('/tmp/test.db'):
+        db.create_all()
     app.run(debug=True)
