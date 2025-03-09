@@ -1,4 +1,0 @@
-{
-    "SECRET_KEY": "your-secret-key",
-    "DATABASE_URI": "sqlite:///todo.db"
-}
