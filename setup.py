@@ -1,12 +1,17 @@
-from setuptools import setup, find_packages
+from setuptools import setup
 
 setup(
     name='flask-todo-api',
     version='0.1',
-    packages=find_packages(),
-    include_package_data=True,
+    description='A Flask API for a to-do list application',
+    author='Your Name',
+    author_email='your.email@example.com',
+    packages=['app'],
     install_requires=[
-        'Flask==1.1.2',
-        'Flask-SQLAlchemy==2.5.1'
+        'flask',
+        'flask_sqlalchemy',
+        'werkzeug',
+        'uuid',
+        'pyjwt'
     ]
 )
