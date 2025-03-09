@@ -1,0 +1,22 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__
+*.so
+*.ipynb
+*.egg
+*.egg-info/
+dist/
+build/
+*.sublime-workspace
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# SQLite
+*.sqlite
