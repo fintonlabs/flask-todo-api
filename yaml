@@ -1,0 +1,12 @@
+version: '3'
+services:
+  web:
+    build: .
+    command: python main.py
+    volumes:
+      - .:/code
+    ports:
+      - 5000:5000
+    environment:
+      - SECRET_KEY=your-secret-key
+      - DATABASE_URI=sqlite:///todo.db
