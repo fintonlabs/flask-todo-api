@@ -1,0 +1,25 @@
+import unittest
+from main import app, db, User, Task
+
+class MainTestCase(unittest.TestCase):
+    def setUp(self):
+        self.app = app.test_client()
+        self.db = db
+
+    def test_create_user(self):
+        response = self.app.post('/user', json={'username': 'test', 'password': 'test'})
+        self.assertEqual(response.status_code, 200)
+
+    def test_login(self):
+        response = self.app.post('/login', headers={'Authorization': 'Basic dGVzdDp0ZXN0'})
+        self.assertEqual(response.status_code, 200)
+
+    def tearDown(self):
+        for user in User.query.all():
+            self.db.session.delete(user)
+        for task in Task.query.all():
+            self.db.session.delete(task)
+        self.db.session.commit()
+
+if __name__ == '__main__':
+    unittest.main()

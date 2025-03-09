@@ -1,1 +1,1 @@
-curl -X POST -H "Content-Type: application/json" -H "Authorization: Bearer <token>" -d '{"title":"Test", "description":"Test description"}' http://localhost:5000/todos
+curl -X POST -H "Content-Type: application/json" -H "x-access-token: <Your Token>" -d '{"title":"Test Task", "description":"This is a test task"}' http://localhost:5000/task

@@ -4,13 +4,11 @@
 *.pyd
 __pycache__
 *.so
-*.ipynb
 *.egg
 *.egg-info
 dist
 build
-*.sublime-project
-*.sublime-workspace
+*.sqlite
 
 # Environments
 .env
@@ -19,5 +17,15 @@ env/
 venv/
 ENV/
 
-# SQLite
-*.sqlite
+# PyCharm
+.idea/
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Jupyter
+.ipynb_checkpoints
+
+# VS Code
+.vscode/
