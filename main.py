@@ -1,106 +1,98 @@
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from flask_jwt_extended import JWTManager, jwt_required, create_access_token
 from werkzeug.security import generate_password_hash, check_password_hash
-import uuid
-import jwt
-import datetime
-from functools import wraps
+from datetime import datetime
 
 app = Flask(__name__)
-
-app.config['SECRET_KEY'] = 'your-secret-key'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:////tmp/test.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///todo.db'
+app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # replace with your secret key
 
 db = SQLAlchemy(app)
+jwt = JWTManager(app)
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    public_id = db.Column(db.String(50), unique=True)
-    name = db.Column(db.String(50))
-    password = db.Column(db.String(80))
-    admin = db.Column(db.Boolean)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password = db.Column(db.String(120), nullable=False)
 
-class Task(db.Model):
+class ToDo(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(50))
-    description = db.Column(db.String(200))
-    status = db.Column(db.String(50), default='pending')
-    user_id = db.Column(db.Integer)
+    title = db.Column(db.String(80), nullable=False)
+    description = db.Column(db.String(120), nullable=True)
+    due_date = db.Column(db.DateTime, nullable=False)
+    completion_status = db.Column(db.Boolean, nullable=False, default=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'))
 
-def token_required(f):
-    @wraps(f)
-    def decorator(*args, **kwargs):
-        token = None
-        if 'x-access-token' in request.headers:
-            token = request.headers['x-access-token']
-        if not token:
-            return jsonify({'message': 'Token is missing!'}), 401
-        try:
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-            current_user = User.query.filter_by(public_id=data['public_id']).first()
-        except:
-            return jsonify({'message': 'Token is invalid!'}), 401
-        return f(current_user, *args, **kwargs)
-    return decorator
+@app.route('/api/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    hashed_password = generate_password_hash(data['password'], method='sha256')
+    new_user = User(username=data['username'], password=hashed_password)
+    db.session.add(new_user)
+    db.session.commit()
+    return jsonify({'message': 'Registered successfully'}), 201
 
-@app.route('/tasks', methods=['GET'])
-@token_required
-def get_all_tasks(current_user):
-    tasks = Task.query.filter_by(user_id=current_user.id).all()
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    user = User.query.filter_by(username=data['username']).first()
+    if not user or not check_password_hash(user.password, data['password']):
+        return jsonify({'message': 'Invalid username or password'}), 401
+    token = create_access_token(identity=user.id)
+    return jsonify({'access_token': token}), 200
+
+@app.route('/api/todo', methods=['POST'])
+@jwt_required()
+def create_todo():
+    data = request.get_json()
+    new_todo = ToDo(title=data['title'], description=data['description'], due_date=datetime.strptime(data['due_date'], '%Y-%m-%d'), user_id=data['user_id'])
+    db.session.add(new_todo)
+    db.session.commit()
+    return jsonify({'message': 'To-do created'}), 201
+
+@app.route('/api/todo/<id>', methods=['GET'])
+@jwt_required()
+def get_todo(id):
+    todo = ToDo.query.get(id)
+    if not todo:
+        return jsonify({'message': 'To-do not found'}), 404
+    return jsonify({'title': todo.title, 'description': todo.description, 'due_date': todo.due_date.strftime('%Y-%m-%d'), 'completion_status': todo.completion_status}), 200
+
+@app.route('/api/todo/<id>', methods=['PUT'])
+@jwt_required()
+def update_todo(id):
+    data = request.get_json()
+    todo = ToDo.query.get(id)
+    if not todo:
+        return jsonify({'message': 'To-do not found'}), 404
+    todo.title = data['title']
+    todo.description = data['description']
+    todo.due_date = datetime.strptime(data['due_date'], '%Y-%m-%d')
+    todo.completion_status = data['completion_status']
+    db.session.commit()
+    return jsonify({'message': 'To-do updated'}), 200
+
+@app.route('/api/todo/<id>', methods=['DELETE'])
+@jwt_required()
+def delete_todo(id):
+    todo = ToDo.query.get(id)
+    if not todo:
+        return jsonify({'message': 'To-do not found'}), 404
+    db.session.delete(todo)
+    db.session.commit()
+    return jsonify({'message': 'To-do deleted'}), 200
+
+@app.route('/api/todos', methods=['GET'])
+@jwt_required()
+def get_todos():
+    todos = ToDo.query.all()
     output = []
-    for task in tasks:
-        task_data = {}
-        task_data['id'] = task.id
-        task_data['title'] = task.title
-        task_data['description'] = task.description
-        task_data['status'] = task.status
-        output.append(task_data)
-    return jsonify({'tasks': output})
-
-@app.route('/tasks/<task_id>', methods=['GET'])
-@token_required
-def get_one_task(current_user, task_id):
-    task = Task.query.filter_by(id=task_id, user_id=current_user.id).first()
-    if not task:
-        return jsonify({'message': 'No task found!'})
-    task_data = {}
-    task_data['id'] = task.id
-    task_data['title'] = task.title
-    task_data['description'] = task.description
-    task_data['status'] = task.status
-    return jsonify(task_data)
-
-@app.route('/tasks', methods=['POST'])
-@token_required
-def create_task(current_user):
-    data = request.get_json()
-    new_task = Task(title=data['title'], description=data['description'], status=data['status'], user_id=current_user.id)
-    db.session.add(new_task)
-    db.session.commit()
-    return jsonify({'message': 'New task created!'})
-
-@app.route('/tasks/<task_id>', methods=['PUT'])
-@token_required
-def complete_task(current_user, task_id):
-    task = Task.query.filter_by(id=task_id, user_id=current_user.id).first()
-    if not task:
-        return jsonify({'message': 'No task found!'})
-    data = request.get_json()
-    task.title = data['title']
-    task.description = data['description']
-    task.status = data['status']
-    db.session.commit()
-    return jsonify({'message': 'Task has been updated!'})
-
-@app.route('/tasks/<task_id>', methods=['DELETE'])
-@token_required
-def delete_task(current_user, task_id):
-    task = Task.query.filter_by(id=task_id, user_id=current_user.id).first()
-    if not task:
-        return jsonify({'message': 'No task found!'})
-    db.session.delete(task)
-    db.session.commit()
-    return jsonify({'message': 'Task has been deleted!'})
+    for todo in todos:
+        todo_data = {'title': todo.title, 'description': todo.description, 'due_date': todo.due_date.strftime('%Y-%m-%d'), 'completion_status': todo.completion_status}
+        output.append(todo_data)
+    return jsonify({'todos': output}), 200
 
 if __name__ == '__main__':
+    db.create_all()
     app.run(debug=True)
